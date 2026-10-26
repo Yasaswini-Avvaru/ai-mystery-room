@@ -1,0 +1,14 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { create, get, status, listEvidence, getEvidence, regenerateEvidenceImage, solution, reveal } from '../controllers/cases.controller.js';
+import { submit } from '../controllers/accusations.controller.js';
+import { env } from '../config/env.js';
+import rateLimit from 'express-rate-limit';
+const router = Router();
+const genres = ['CRIME','THEFT','DISAPPEARANCE','CYBER_MYSTERY','CAMPUS_MYSTERY','GENERAL_MYSTERY'];
+const createSchema = z.object({ scenario: z.string().trim().min(1).max(5000), title: z.string().trim().min(3).max(80).optional(), genre: z.enum(genres).default('GENERAL_MYSTERY'), difficulty: z.enum(['EASY','MEDIUM','HARD']).default('MEDIUM'), suspectCount: z.coerce.number().int().min(3).max(6).default(4), evidenceRichness: z.enum(['STANDARD','DETAILED']).default('STANDARD') }).strict();
+router.get('/health',(req,res)=>res.json({success:true,data:{status:'ok'}}));
+const generationLimit = rateLimit({ windowMs: env.RATE_LIMIT_WINDOW_MS, limit: env.CASE_GENERATION_LIMIT, standardHeaders: 'draft-7', legacyHeaders: false, handler: (req,res) => res.status(429).json({success:false,error:{code:'RATE_LIMITED',message:'Too many case generations. Please wait before creating another case.'}}) });
+router.post('/cases',generationLimit,(req,res,next)=>{const parsed=createSchema.safeParse(req.body);if(!parsed.success)return res.status(400).json({success:false,error:{code:'VALIDATION_ERROR',message:parsed.error.issues.map(i=>i.message).join(' ')}});req.body=parsed.data;next();},create);
+router.get('/cases/:caseId/status',status); router.get('/cases/:caseId/evidence',listEvidence); router.post('/cases/:caseId/evidence/:evidenceId/media',regenerateEvidenceImage); router.get('/cases/:caseId/evidence/:evidenceId',getEvidence); router.post('/cases/:caseId/accusations',(req,res,next)=>{const parsed=z.object({suspectId:z.string().min(1),explanation:z.string().max(1000).optional()}).strict().safeParse(req.body);if(!parsed.success)return res.status(400).json({success:false,error:{code:'VALIDATION_ERROR',message:'Provide one case suspect and an explanation up to 1,000 characters.'}});req.body=parsed.data;next();},submit); router.get('/cases/:caseId/solution',solution); router.post('/cases/:caseId/reveal-solution',reveal); router.get('/cases/:caseId',get);
+export default router;
