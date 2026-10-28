@@ -13,7 +13,10 @@ async function request(path, options = {}) {
     throw new Error(`Could not reach the case API${apiBaseUrl ? ` at ${apiBaseUrl}` : ''}. Check the frontend API URL and backend deployment.`);
   }
   const body = await response.json().catch(() => null);
-  if (!body || typeof body !== 'object') throw new Error(`The case API returned a non-JSON response (${response.status}). Check VITE_API_BASE_URL and the backend URL.`);
+  if (!body || typeof body !== 'object') {
+    if (response.status === 429) throw new Error('The API host rate-limited this request (429). Wait a few minutes before retrying; if it keeps happening, check the Render service rate limits.');
+    throw new Error(`The case API returned a non-JSON response (${response.status}). Check VITE_API_BASE_URL and the backend URL.`);
+  }
   if (!response.ok || !body.success) {
     const message = body?.error?.message || `Case API request failed (${response.status}).`;
     const code = body?.error?.code;
