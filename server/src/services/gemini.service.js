@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { env } from '../config/env.js';
-import { validateMystery } from './case-validation.service.js';
+import { normalizeEvidenceType, validateMystery } from './case-validation.service.js';
 
 const client = env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }) : null;
 const retryableStatuses = new Set([408, 429, 500, 502, 503, 504]);
@@ -62,9 +62,10 @@ function attachPlannedAnalysis(evidence, evidencePlan) {
   const plannedById = new Map((evidencePlan.artifacts || []).map(item => [item.id, item]));
   return evidence.map(item => {
     const planned = plannedById.get(item.id);
-    if (!planned) return item;
+    const normalized = { ...item, type: normalizeEvidenceType(planned?.type || item.type) };
+    if (!planned) return normalized;
     return {
-      ...item,
+      ...normalized,
       privateAnalysis: {
         ...item.privateAnalysis,
         canonicalFact: planned.canonicalFact,
@@ -118,7 +119,8 @@ export async function generateMystery(input, onStage = () => {}) {
 
   onStage('EVIDENCE_PLANNING');
   const count = input.evidenceRichness === 'DETAILED' ? 10 : 8;
-  const evidencePlan = await generateJson(`Plan exactly ${count} evidence artifacts from the private canonical plan below. This is an evidence plan only; do not write full artifact text. Make every clue fit the user's premise, setting, tone, and explicit constraints; choose artifact types that make sense for this case rather than forcing irrelevant formats. Include at least TWO IMAGE artifacts when compatible with the user's request, each depicting a concrete clue suitable for a generated evidence photograph. If the user explicitly asks for text-only evidence or no images, honor that request. Assign each artifact a unique id, purpose, canonicalFact, supported type, related suspect IDs, and coherent timestamp. At least two separate artifacts support the culprit using independent facts and at least one materially contradicts the culprit's account. Put the IDs of those exact supporting and contradictory artifacts in the corresponding arrays. Keep red herrings explainable. Return JSON {"artifacts":[{"id":"e1","type":"IMAGE","purpose":"...","canonicalFact":"...","relatedSuspectIds":["s1"],"occurredAt":"ISO date or null","contradicts":["suspect id"],"redHerring":false}],"supportingEvidenceIds":["e1","e2"],"contradictionEvidenceIds":["e3"]}. Do not alter canonical facts.\nPRIVATE CANONICAL PLAN: ${JSON.stringify(plan)}`, 'EVIDENCE_PLANNING');
+  const rawEvidencePlan = await generateJson(`Plan exactly ${count} evidence artifacts from the private canonical plan below. This is an evidence plan only; do not write full artifact text. Make every clue fit the user's premise, setting, tone, and explicit constraints; choose artifact types that make sense for this case rather than forcing irrelevant formats. Use only these exact type values: MESSAGE, IMAGE, CCTV, WITNESS_STATEMENT, DOCUMENT, PHYSICAL_CLUE, DIGITAL_LOG, TIMELINE_RECORD. Do not use aliases such as NOTE, LOG, PHOTO, or VIDEO. Include at least TWO IMAGE artifacts when compatible with the user's request, each depicting a concrete clue suitable for a generated evidence photograph. If the user explicitly asks for text-only evidence or no images, honor that request. Assign each artifact a unique id, purpose, canonicalFact, supported type, related suspect IDs, and coherent timestamp. At least two separate artifacts support the culprit using independent facts and at least one materially contradicts the culprit's account. Put the IDs of those exact supporting and contradictory artifacts in the corresponding arrays. Keep red herrings explainable. Return JSON {"artifacts":[{"id":"e1","type":"IMAGE","purpose":"...","canonicalFact":"...","relatedSuspectIds":["s1"],"occurredAt":"ISO date or null","contradicts":["suspect id"],"redHerring":false}],"supportingEvidenceIds":["e1","e2"],"contradictionEvidenceIds":["e3"]}. Do not alter canonical facts.\nPRIVATE CANONICAL PLAN: ${JSON.stringify(plan)}`, 'EVIDENCE_PLANNING');
+  const evidencePlan = { ...rawEvidencePlan, artifacts: (rawEvidencePlan.artifacts || []).map(item => ({ ...item, type: normalizeEvidenceType(item.type) })) };
 
   onStage('ARTIFACT_GENERATION');
   const artifactPrompt = `Write the actual player-facing content for every artifact in the evidence plan below. Return only valid JSON. Preserve its IDs, types, purposes, facts, suspect references, contradiction targets, and timestamps. Do NOT change the culprit, motive, timeline, statements or underlying events. Artifacts must be fair and coherent. For IMAGE and CCTV artifacts, describe the fictional visual evidence faithfully; a separate media service generates the actual image or video. Do not claim a media file exists in the artifact text. All evidence is fictional. Keep privateAnalysis separate from visible content; never put intended deductions or canonical solution wording into the visible artifact.\nCANONICAL PLAN (private): ${JSON.stringify(plan)}\nEVIDENCE PLAN (private): ${JSON.stringify(evidencePlan)}\nJSON SHAPE: {"evidence":[{"id":"e1","title":"...","type":"MESSAGE|IMAGE|CCTV|WITNESS_STATEMENT|DOCUMENT|PHYSICAL_CLUE|DIGITAL_LOG|TIMELINE_RECORD","summary":"...","content":"full player-visible text artifact","sourceLabel":"FICTIONAL ...","occurredAt":"ISO date or null","relatedSuspectIds":["s1"],"privateAnalysis":{"canonicalFact":"...","intendedDeduction":"...","contradicts":["suspect id"],"redHerring":false}}]}.`;

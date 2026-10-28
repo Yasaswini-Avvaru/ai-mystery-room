@@ -1,4 +1,7 @@
 const supportedTypes = new Set(['MESSAGE','IMAGE','CCTV','WITNESS_STATEMENT','DOCUMENT','PHYSICAL_CLUE','DIGITAL_LOG','TIMELINE_RECORD']);
+const evidenceTypeAliases = Object.freeze({ NOTE: 'DOCUMENT', REPORT: 'DOCUMENT', EMAIL: 'MESSAGE', CHAT: 'MESSAGE', TEXT_MESSAGE: 'MESSAGE', PHOTO: 'IMAGE', PHOTOGRAPH: 'IMAGE', VIDEO: 'CCTV', SURVEILLANCE_VIDEO: 'CCTV', LOG: 'DIGITAL_LOG', RECORD: 'TIMELINE_RECORD', STATEMENT: 'WITNESS_STATEMENT', PHYSICAL_EVIDENCE: 'PHYSICAL_CLUE' });
+export function normalizeEvidenceType(type) { const normalized = String(type || '').trim().toUpperCase(); return evidenceTypeAliases[normalized] || normalized; }
+
 export function validateMystery(plan, expectedSuspects) {
   const errors = [];
   if (!plan || typeof plan !== 'object') return ['The generated case was empty.'];
