@@ -1,7 +1,24 @@
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+
+export function resolveAssetUrl(path) {
+  if (!path || /^https?:\/\//i.test(path)) return path;
+  return apiBaseUrl ? new URL(path, apiBaseUrl).toString() : path;
+}
+
 async function request(path, options = {}) {
-  const response = await fetch(`/api${path}`, { headers: { 'Content-Type': 'application/json', ...options.headers }, ...options });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body.success) throw new Error(body?.error?.message || 'Something went wrong. Please try again.');
+  let response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api${path}`, { headers: { 'Content-Type': 'application/json', ...options.headers }, ...options });
+  } catch {
+    throw new Error(`Could not reach the case API${apiBaseUrl ? ` at ${apiBaseUrl}` : ''}. Check the frontend API URL and backend deployment.`);
+  }
+  const body = await response.json().catch(() => null);
+  if (!body || typeof body !== 'object') throw new Error(`The case API returned a non-JSON response (${response.status}). Check VITE_API_BASE_URL and the backend URL.`);
+  if (!response.ok || !body.success) {
+    const message = body?.error?.message || `Case API request failed (${response.status}).`;
+    const code = body?.error?.code;
+    throw new Error(code && message === 'An unexpected server error occurred.' ? `${code}: ${message}` : message);
+  }
   return body.data;
 }
 export const api = {

@@ -20,6 +20,8 @@ Alternatively, run `npm run dev -w server` and `npm run dev -w client` in separa
 
 See [server/.env.example](server/.env.example). Gemini is required for case generation. Google Gemini image generation creates image evidence, and Veo creates a short CCTV clip. The server downloads generated media into ignored `server/uploads/` storage and serves it from `/media`; retain that directory in deployments or configure persistent media storage. Image/video generation can require separate model access and billing. If media generation fails, the written evidence still appears with a visible failure state.
 
+For separate production frontend and API hosts, set `VITE_API_BASE_URL` in the frontend build environment to the backend origin (for example, `https://your-api-service.example.com`, with no `/api` suffix). Set `CLIENT_ORIGIN` on the backend to the exact frontend origin. If multiple frontend origins are needed, separate them with commas. Same-origin deployments with a reverse proxy for `/api` and `/media` can leave `VITE_API_BASE_URL` empty.
+
 ## API
 
 See [docs/API.md](docs/API.md). The unauthenticated MVP uses a one-final-accusation gameplay gate. Case IDs are not identity authorization, so this is not a private-user case system.

@@ -14,7 +14,7 @@ const schema = z.object({
   GEMINI_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
   GEMINI_VIDEO_TIMEOUT_MS: z.coerce.number().int().positive().default(600000),
   GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(4).default(2),
-  CLIENT_ORIGIN: z.string().url().default('http://localhost:5173'),
+  CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().positive().default(900000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(30),
   CASE_GENERATION_LIMIT: z.coerce.number().int().positive().default(5)
