@@ -12,7 +12,10 @@ export async function createCase(input) {
     });
     await Case.updateOne({ _id: doc._id }, { $set: { status: 'VALIDATING', 'generationMetadata.stage': 'VALIDATION' } });
     const problems = validateMystery(plan, input.suspectCount);
-    if (problems.length) throw Object.assign(new Error(`Generated case failed validation: ${problems.join(' ')}`), { status: 502, code: 'CASE_VALIDATION_FAILED' });
+    if (problems.length) {
+      console.error('[CaseValidation] generated case failed validation', JSON.stringify({ problems }));
+      throw Object.assign(new Error('The generated case did not meet the investigation consistency checks.'), { status: 502, code: 'CASE_VALIDATION_FAILED', details: problems });
+    }
     await Case.updateOne({ _id: doc._id }, { $set: { 'generationMetadata.stage': 'MEDIA_GENERATION' } });
     const evidence = [];
     for (const artifact of plan.evidence) {

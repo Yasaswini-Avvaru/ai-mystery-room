@@ -17,7 +17,9 @@ async function request(path, options = {}) {
   if (!response.ok || !body.success) {
     const message = body?.error?.message || `Case API request failed (${response.status}).`;
     const code = body?.error?.code;
-    throw new Error(code && message === 'An unexpected server error occurred.' ? `${code}: ${message}` : message);
+    const details = Array.isArray(body?.error?.details) ? body.error.details.join(' ') : '';
+    const prefix = code && message === 'An unexpected server error occurred.' ? `${code}: ${message}` : message;
+    throw new Error([prefix, details].filter(Boolean).join(' '));
   }
   return body.data;
 }

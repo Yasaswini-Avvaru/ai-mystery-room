@@ -57,6 +57,24 @@ function parseJson(text) {
   }
 }
 
+function attachPlannedAnalysis(evidence, evidencePlan) {
+  if (!Array.isArray(evidence)) return evidence;
+  const plannedById = new Map((evidencePlan.artifacts || []).map(item => [item.id, item]));
+  return evidence.map(item => {
+    const planned = plannedById.get(item.id);
+    if (!planned) return item;
+    return {
+      ...item,
+      privateAnalysis: {
+        ...item.privateAnalysis,
+        canonicalFact: planned.canonicalFact,
+        contradicts: Array.isArray(planned.contradicts) ? planned.contradicts : [],
+        redHerring: planned.redHerring === true
+      }
+    };
+  });
+}
+
 async function generateJson(prompt, stage) {
   let last;
   for (let attempt = 0; attempt <= env.GEMINI_MAX_RETRIES; attempt += 1) {
@@ -105,18 +123,18 @@ export async function generateMystery(input, onStage = () => {}) {
   onStage('ARTIFACT_GENERATION');
   const artifactPrompt = `Write the actual player-facing content for every artifact in the evidence plan below. Return only valid JSON. Preserve its IDs, types, purposes, facts, suspect references, contradiction targets, and timestamps. Do NOT change the culprit, motive, timeline, statements or underlying events. Artifacts must be fair and coherent. For IMAGE and CCTV artifacts, describe the fictional visual evidence faithfully; a separate media service generates the actual image or video. Do not claim a media file exists in the artifact text. All evidence is fictional. Keep privateAnalysis separate from visible content; never put intended deductions or canonical solution wording into the visible artifact.\nCANONICAL PLAN (private): ${JSON.stringify(plan)}\nEVIDENCE PLAN (private): ${JSON.stringify(evidencePlan)}\nJSON SHAPE: {"evidence":[{"id":"e1","title":"...","type":"MESSAGE|IMAGE|CCTV|WITNESS_STATEMENT|DOCUMENT|PHYSICAL_CLUE|DIGITAL_LOG|TIMELINE_RECORD","summary":"...","content":"full player-visible text artifact","sourceLabel":"FICTIONAL ...","occurredAt":"ISO date or null","relatedSuspectIds":["s1"],"privateAnalysis":{"canonicalFact":"...","intendedDeduction":"...","contradicts":["suspect id"],"redHerring":false}}]}.`;
   let artifacts = await generateJson(artifactPrompt, 'ARTIFACT_GENERATION');
-  let candidate = { ...plan, evidence: artifacts.evidence, supportingEvidenceIds: evidencePlan.supportingEvidenceIds, contradictionEvidenceIds: evidencePlan.contradictionEvidenceIds };
+  let candidate = { ...plan, evidence: attachPlannedAnalysis(artifacts.evidence, evidencePlan), supportingEvidenceIds: evidencePlan.supportingEvidenceIds, contradictionEvidenceIds: evidencePlan.contradictionEvidenceIds };
   let problems = validateMystery(candidate, input.suspectCount);
   if (problems.length) {
     onStage('CASE_REPAIR');
-    const repairPrompt = `Repair the evidence package so it passes every listed case validation error. Keep the canonical truth, culprit, facts, suspect list, and timestamps unchanged. Return only JSON with "evidence", "supportingEvidenceIds", and "contradictionEvidenceIds". Include at least seven distinct artifacts and at least two IMAGE artifacts. Every artifact must have a unique id, title, summary, content, sourceLabel, valid type, and only valid suspect IDs. The supporting IDs must each match an evidence id and each matching item's privateAnalysis.canonicalFact must support an established non-red-herring fact. The contradiction IDs must match an evidence id whose privateAnalysis.contradicts includes the exact culprit ID. Ensure at least two independent supporting clues and at least one culprit-alibi contradiction. Preserve the existing clues wherever possible and add or correct only what is needed.\nVALIDATION ERRORS: ${JSON.stringify(problems)}\nCULPRIT ID: ${plan.culpritSuspectId}\nCANONICAL PLAN: ${JSON.stringify(plan)}\nEVIDENCE PLAN: ${JSON.stringify(evidencePlan)}\nCURRENT EVIDENCE PACKAGE: ${JSON.stringify({ evidence: candidate.evidence, supportingEvidenceIds: candidate.supportingEvidenceIds, contradictionEvidenceIds: candidate.contradictionEvidenceIds })}`;
+    const repairPrompt = `Repair the evidence package so it passes every listed case validation error. Keep the canonical truth, culprit, facts, suspect list, and timestamps unchanged. Return only JSON with "evidence", "supportingEvidenceIds", and "contradictionEvidenceIds". Include at least seven distinct artifacts. Every artifact must have a unique id, title, summary, content, sourceLabel, valid type, and only valid suspect IDs. Follow any user request about image or text-only evidence. The supporting IDs must each match an evidence id and each matching item's privateAnalysis.canonicalFact must support an established non-red-herring fact. The contradiction IDs must match an evidence id whose privateAnalysis.contradicts includes the exact culprit ID. Ensure at least two independent supporting clues and at least one culprit-alibi contradiction. Preserve the existing clues wherever possible and add or correct only what is needed.\nVALIDATION ERRORS: ${JSON.stringify(problems)}\nCULPRIT ID: ${plan.culpritSuspectId}\nCANONICAL PLAN: ${JSON.stringify(plan)}\nEVIDENCE PLAN: ${JSON.stringify(evidencePlan)}\nCURRENT EVIDENCE PACKAGE: ${JSON.stringify({ evidence: candidate.evidence, supportingEvidenceIds: candidate.supportingEvidenceIds, contradictionEvidenceIds: candidate.contradictionEvidenceIds })}`;
     const repaired = await generateJson(repairPrompt, 'CASE_REPAIR');
-    candidate = { ...candidate, evidence: repaired.evidence, supportingEvidenceIds: repaired.supportingEvidenceIds, contradictionEvidenceIds: repaired.contradictionEvidenceIds };
+    candidate = { ...candidate, evidence: attachPlannedAnalysis(repaired.evidence, evidencePlan), supportingEvidenceIds: repaired.supportingEvidenceIds, contradictionEvidenceIds: repaired.contradictionEvidenceIds };
     problems = validateMystery(candidate, input.suspectCount);
   }
   if (problems.length) {
     console.error('[CaseValidation] Gemini case failed validation after repair', JSON.stringify({ problems }));
-    throw Object.assign(new Error('Gemini could not produce a consistent case after one repair attempt. Please try again.'), { status: 502, code: 'CASE_VALIDATION_FAILED' });
+    throw Object.assign(new Error('Gemini could not produce a consistent case after one repair attempt. Please try again.'), { status: 502, code: 'CASE_VALIDATION_FAILED', details: problems });
   }
   return candidate;
 }
